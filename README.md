@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://stellog-eta.vercel.app"><b>Live demo</b></a> ·
+  <a href="https://youtu.be/5XeM1qUk6NI"><b>Walkthrough (4:04)</b></a> ·
   <a href="docs/architecture.md"><b>Architecture</b></a> ·
   <a href="docs/hosting.md">Self-host</a> ·
   <a href="docs/status.md">Status</a> ·
@@ -13,6 +14,10 @@
 Stellog is a multi-tenant analytics service for Stellar projects. A project gets a private view of its pageviews and its API traffic. An SCF operator can rank every project. The store is PostgreSQL. Stellog holds no funds and no tenant secret key.
 
 It is [Umami](https://github.com/umami-software/umami) 3.5.0 (commit `b18d514`) with a Stellog landing page, password reset, Freighter and xBull sign-in, and a separate operator door. Built in public for the Stellar Community Fund RFP *Web and API Analytics for Stellar Ecosystem Projects* (SCF #46).
+
+## Watch the walkthrough
+
+[Stellog: Privacy-First Web & API Analytics for Stellar (Live Mainnet Walkthrough)](https://youtu.be/5XeM1qUk6NI) (4:04). It unlocks a mainnet wallet, adds USDC and EURC trustlines, sends and receives payments, and shows each event in the ledger and the realtime feed. It also shows the events view, the tracking snippet, the API ingest key, the operator view, and project comparison.
 
 ## The problem
 
