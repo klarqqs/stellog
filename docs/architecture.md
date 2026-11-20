@@ -35,6 +35,8 @@ The tracker, the web collector, PostgreSQL, and both dashboards are live. OpenTe
 
 Sign-in uses a SEP-10 style challenge on the public Stellar network (`WebAuth.buildChallengeTx` in `src/lib/starlog-accounts.ts`). The challenge lasts five minutes. Freighter and xBull are the wallets offered by `GET /api/auth/wallet/config`. The signed address must already be linked to an email account under Settings → Wallets. An unknown address is rejected. Wallet-only signup is not built. The server key is `STELLAR_AUTH_SECRET`. When that variable is absent in production, wallet sign-in is off.
 
+Wallet sign-in uses Stellar Wallets Kit 2.8.0, bundled in `public/wallet.js`, with the Freighter and xBull modules only.
+
 The ledger is a set of named events, not a chain watcher. A project reports `wallet_created`, `trustline_added`, `tx_sent`, and `tx_received`. Stellog stores the event name, network (`mainnet` or `testnet`), asset, success flag, and transaction hash. The hash links to Stellar Expert. A Stellar secret is never part of the payload. If the reporter also sends `amount` or `phone`, those strings are stored on the event as extra data. Stellog does not submit the transaction and does not watch Horizon.
 
 API route names are normalized before they are stored (`src/stellog/normalize-route.ts`). A Stellar G-address becomes `{account}`, a C-address `{contract}`, an M-address `{muxed}`, a UUID `{uuid}`, a hex hash `{hash}`, and a numeric id `{id}`. Query strings are dropped. The smoke on 15 Nov 2026 stored `/accounts/{account}` and `/tx/{hash}` from those inputs.
@@ -49,7 +51,7 @@ Automatic capture of wallet-kit events is out of scope. If the project does not 
 
 ## 3. Data flow and privacy
 
-Web collection on the Stellog path checks a signed nonce that stays valid for five minutes, checks the Origin, rejects bots, and rate-limits by IP. That path truncates the IP before lookup and does not write city or region. The session salt rotates monthly unless `SALT_ROTATION` is set. The tracker sets no cookie.
+Web collection on the Stellog path checks a signed nonce that stays valid for five minutes, checks the Origin, rejects bots, and rate-limits by IP. That path truncates the IP before lookup and does not write city or region. On the Stellog collect path the session salt rotates each UTC day. The tracker sets no cookie.
 
 API tenants send OpenTelemetry to `/v1/metrics`, `/v1/traces`, and `/v1/logs` with a team ingest key (`stk_`). The key is stored as a hash. A payload that names another tenant's website is rejected. Trace and log bodies are not kept. The retained API data is request counts, error counts, and latency histograms, rolled into hour and day tables.
 
@@ -79,11 +81,13 @@ Data residency today is that region. Pageviews, API rollups, and ledger event fi
 
 [runbooks.md](runbooks.md) covers backup (`scripts/backup-db.sh`), restore, and the ops check. The prune timer in `infra/systemd/` is in the tree and is not installed by the Vercel deploy.
 
+Today the data sits in Prisma Postgres, region `iad1` (US East, North Virginia, United States). The Vercel functions that query it run in the same region. There is no replica. In Tranche 3, before the 12-month support window, the collector, the dashboard, and the database leave Prisma Postgres and move onto the Linux VPS in [hosting.md](hosting.md): PostgreSQL on that same machine, with the daily backup script. The VPS provider and city are chosen at that move.
+
 ## 7. Threats this repository already addresses
 
 | Threat | What the code does |
 | --- | --- |
-| Forged pageviews | Origin check, bot rejection, rate limit, monthly session salt. |
+| Forged pageviews | Origin check, bot rejection, rate limit, daily session salt. |
 | Metric inflation or cross-tenant ingest | Ingest keys are hashed and bound to one team. A foreign website id is rejected. |
 | Stolen operator key | The key is a hash. Revoking it makes the ranking route return 401. |
 | Cross-tenant reads | Tenant APIs require a session on that team. A database superuser can still read every row, because row-level security is off. |
