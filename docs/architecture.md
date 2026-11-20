@@ -6,10 +6,18 @@ The public demo runs at `https://stellog-eta.vercel.app`. Self-hosting steps are
 
 ## 1. System overview
 
-```text
-tenant site  -->  /s/1.js  -->  POST /s/e  -->  PostgreSQL  -->  tenant dashboard
-tenant API   -->  OTLP     -->  POST /v1/* -->  PostgreSQL  -->  operator ranking
-Stellar app  -->  event    -->  POST /api/send --> ledger row --> Stellar Expert
+```mermaid
+flowchart LR
+  site["Tenant site"] --> script["Tracker /s/1.js"]
+  script --> web["POST /s/e"]
+  api["Tenant API"] --> otel["OTLP /v1"]
+  app["Stellar app"] --> send["POST /api/send"]
+  web --> pg[("Prisma Postgres, iad1")]
+  otel --> pg
+  send --> pg
+  pg --> tenant["Tenant dashboard"]
+  pg --> operator["Operator ranking"]
+  send --> expert["Stellar Expert"]
 ```
 
 | Component | Role | Status |
@@ -17,9 +25,11 @@ Stellar app  -->  event    -->  POST /api/send --> ledger row --> Stellar Expert
 | Tracker `public/s/1.js` | Pageviews, referrers, and a per-tab session. No cookies. | Live. sha384 is pinned in `src/stellog/tracker-pin.json`. |
 | Web collector `POST /s/e` | Origin check, bot rejection, rate limit. City and region are not stored on this path. | Live. A wrong Origin returns 403. A known bot is accepted and stored as nothing. |
 | OTel collector `POST /v1/metrics`, `/v1/traces`, `/v1/logs` | JSON OTLP in. Counters and latency histograms are kept. Log bodies are not stored. | Live for JSON. Protobuf traces were accepted in the 15 Nov 2026 smoke. Gzip was not exercised. |
-| PostgreSQL | Web events and API rollups in one database. | Live. |
+| PostgreSQL | Web events and API rollups in one database. | Live. Prisma Postgres in `iad1`. |
 | Dashboards | A tenant sees only their projects. An SCF operator ranks every project. | Live. |
 | Anomaly detection | Not in this repository. | Not built. |
+
+The tracker, the web collector, PostgreSQL, and both dashboards are live. OpenTelemetry ingest is live for JSON. Protobuf traces were accepted in the 15 Nov 2026 smoke. Gzip has not been exercised. Anomaly detection is not built.
 
 ## 2. Stellar integration
 
@@ -29,7 +39,11 @@ The ledger is a set of named events, not a chain watcher. A project reports `wal
 
 API route names are normalized before they are stored (`src/stellog/normalize-route.ts`). A Stellar G-address becomes `{account}`, a C-address `{contract}`, an M-address `{muxed}`, a UUID `{uuid}`, a hex hash `{hash}`, and a numeric id `{id}`. Query strings are dropped. The smoke on 15 Nov 2026 stored `/accounts/{account}` and `/tx/{hash}` from those inputs.
 
-Obba on mainnet is the reference reporter. After a confirmed USDC send, trustline, or new account, Obba posts the event to `POST /api/send` on the Stellog host for the Obba website. Stellog does not submit the Stellar transaction.
+Obba on mainnet is the reference reporter. After a confirmed USDC send, trustline, or new account, Obba posts the event to `POST /api/send` on the Stellog host for the Obba website. Stellog does not submit the Stellar transaction. These three mainnet transactions from 19 Nov 2026 are the reference set:
+
+- Wallet created: [e2d5f396a76a984bd8a2709a3829b6375c5dbe6665045ac61b615c529a09a68c](https://stellar.expert/explorer/public/tx/e2d5f396a76a984bd8a2709a3829b6375c5dbe6665045ac61b615c529a09a68c)
+- USDC trustline: [0f20091cbb7bd01c6198952be7485e3e0074bce952187b50b6194bc76ea28f0a](https://stellar.expert/explorer/public/tx/0f20091cbb7bd01c6198952be7485e3e0074bce952187b50b6194bc76ea28f0a)
+- Payment of 2 USDC: [ae635daac269925458649bfbd89bfbf7665189353aed237b60e3b0994780505e](https://stellar.expert/explorer/public/tx/ae635daac269925458649bfbd89bfbf7665189353aed237b60e3b0994780505e)
 
 Automatic capture of wallet-kit events is out of scope. If the project does not send the event, the ledger stays empty.
 
@@ -59,15 +73,17 @@ openssl dgst -sha384 -binary public/s/1.js | openssl base64 -A
 
 ## 6. Deployment and operations
 
-The shared service is the Next.js app on Vercel, with Postgres reached through `DATABASE_URL`. `GET /api/heartbeat` returns `{ "ok": true }` when the process is up and does not check Postgres. `GET /api/health` runs `SELECT 1` and returns 503 when the database does not answer.
+The shared service is the Next.js app on Vercel. Serverless functions run in `iad1` (US East, North Virginia). PostgreSQL is [Prisma Postgres](https://www.prisma.io/postgres), store `stellog-db`, in the same region. Application queries use `pooled.db.prisma.io`. Migrations and direct access use `db.prisma.io`. Both require TLS. There is no replica in another region. `GET /api/heartbeat` returns `{ "ok": true }` when the process is up and does not check Postgres. `GET /api/health` runs `SELECT 1` and returns 503 when the database does not answer.
 
-A self-hosted install is the same Node process and Postgres. [hosting.md](hosting.md) covers a Linux VPS and Fly.io. [runbooks.md](runbooks.md) covers backup (`scripts/backup-db.sh`), restore, and the ops check. The prune timer in `infra/systemd/` is in the tree and is not installed by the Vercel deploy.
+Data residency today is that region. Pageviews, API rollups, and ledger event fields are stored in Prisma Postgres in `iad1`, United States. Moving the collector, the dashboard, and Postgres onto the self-hosted setup in [hosting.md](hosting.md), with the existing backup script, is a Tranche 3 change. It is not the current production topology.
+
+[runbooks.md](runbooks.md) covers backup (`scripts/backup-db.sh`), restore, and the ops check. The prune timer in `infra/systemd/` is in the tree and is not installed by the Vercel deploy.
 
 ## 7. Threats this repository already addresses
 
 | Threat | What the code does |
 | --- | --- |
-| Forged pageviews | Origin check, bot rejection, rate limit, daily salt. |
+| Forged pageviews | Origin check, bot rejection, rate limit, monthly session salt. |
 | Metric inflation or cross-tenant ingest | Ingest keys are hashed and bound to one team. A foreign website id is rejected. |
 | Stolen operator key | The key is a hash. Revoking it makes the ranking route return 401. |
 | Cross-tenant reads | Tenant APIs require a session on that team. A database superuser can still read every row, because row-level security is off. |
