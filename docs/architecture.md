@@ -25,7 +25,7 @@ Stellar app  -->  event    -->  POST /api/send --> ledger row --> Stellar Expert
 
 Sign-in uses a SEP-10 style challenge on the public Stellar network (`WebAuth.buildChallengeTx` in `src/lib/starlog-accounts.ts`). The challenge lasts five minutes. Freighter and xBull are the wallets offered by `GET /api/auth/wallet/config`. The signed address must already be linked to an email account under Settings → Wallets. An unknown address is rejected. Wallet-only signup is not built. The server key is `STELLAR_AUTH_SECRET`. When that variable is absent in production, wallet sign-in is off.
 
-The ledger is a set of named events, not a chain watcher. A project reports `wallet_created`, `trustline_added`, `tx_sent`, and `tx_received`. Stellog stores the event name, network (`mainnet` or `testnet`), asset, success flag, and transaction hash. The hash links to Stellar Expert. The collector does not store the account address, the secret, the memo, the amount, or the phone number. Amount display, when present, is a separate field the sender chose to include.
+The ledger is a set of named events, not a chain watcher. A project reports `wallet_created`, `trustline_added`, `tx_sent`, and `tx_received`. Stellog stores the event name, network (`mainnet` or `testnet`), asset, success flag, and transaction hash. The hash links to Stellar Expert. A Stellar secret is never part of the payload. If the reporter also sends `amount` or `phone`, those strings are stored on the event as extra data. Stellog does not submit the transaction and does not watch Horizon.
 
 API route names are normalized before they are stored (`src/stellog/normalize-route.ts`). A Stellar G-address becomes `{account}`, a C-address `{contract}`, an M-address `{muxed}`, a UUID `{uuid}`, a hex hash `{hash}`, and a numeric id `{id}`. Query strings are dropped. The smoke on 15 Nov 2026 stored `/accounts/{account}` and `/tx/{hash}` from those inputs.
 
@@ -35,7 +35,7 @@ Automatic capture of wallet-kit events is out of scope. If the project does not 
 
 ## 3. Data flow and privacy
 
-Web collection uses a short-lived cache token, checks the Origin, rejects bots, and rate-limits by IP. The Stellog collect path truncates the IP before lookup and does not write city or region. The session salt rotates daily. The tracker sets no cookie.
+Web collection on the Stellog path checks a signed nonce that stays valid for five minutes, checks the Origin, rejects bots, and rate-limits by IP. That path truncates the IP before lookup and does not write city or region. The session salt rotates monthly unless `SALT_ROTATION` is set. The tracker sets no cookie.
 
 API tenants send OpenTelemetry to `/v1/metrics`, `/v1/traces`, and `/v1/logs` with a team ingest key (`stk_`). The key is stored as a hash. A payload that names another tenant's website is rejected. Trace and log bodies are not kept. The retained API data is request counts, error counts, and latency histograms, rolled into hour and day tables.
 
